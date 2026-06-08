@@ -41,7 +41,6 @@ function Index() {
           </Link>
           <div className="hidden md:flex items-center gap-8 text-sm font-medium text-foreground/60">
             <a href="#features" className="hover:text-primary transition-colors">Platform</a>
-            <a href="#stats" className="hover:text-primary transition-colors">Performance</a>
             <a href="#tech" className="hover:text-primary transition-colors">Technology</a>
             <a href="#about" className="hover:text-primary transition-colors">About</a>
           </div>
@@ -167,23 +166,6 @@ function Index() {
           </div>
         </div>
       </main>
-
-      {/* Stats */}
-      <section id="stats" className="py-20 border-t border-border bg-surface/30">
-        <div className="max-w-7xl mx-auto px-6 grid grid-cols-2 md:grid-cols-4 gap-6">
-          {[
-            { value: "2.4M", label: "Faces processed daily" },
-            { value: "99.2%", label: "Model accuracy" },
-            { value: "12ms", label: "Inference latency" },
-            { value: "7", label: "Emotion classes" },
-          ].map((s) => (
-            <div key={s.label} className="p-6 rounded-2xl border border-border bg-surface">
-              <div className="text-4xl font-extrabold tracking-tight bg-gradient-to-br from-foreground to-foreground/40 bg-clip-text text-transparent mb-1">{s.value}</div>
-              <div className="text-sm text-foreground/50">{s.label}</div>
-            </div>
-          ))}
-        </div>
-      </section>
 
       {/* Features */}
       <section id="features" className="py-24">

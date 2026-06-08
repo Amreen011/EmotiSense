@@ -1,7 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { AppShell } from "../components/AppShell";
 import { Sparkles, Heart, Brain, MessageCircle, Send, TrendingUp, AlertTriangle } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { chatWithCompanion } from "../lib/api/companion.functions";
+import { getDetections, summarize, EMOTION_LABELS } from "../lib/emotionStore";
 
 export const Route = createFileRoute("/insights")({
   head: () => ({
@@ -15,11 +17,61 @@ export const Route = createFileRoute("/insights")({
 
 function Insights() {
   const [msg, setMsg] = useState("");
-  const [chat, setChat] = useState([
-    { role: "ai", text: "Hi 👋 I've reviewed your last 7 days of detection sessions. Your overall mood has been bright. How are you feeling right now?" },
-    { role: "user", text: "A bit overwhelmed today actually." },
-    { role: "ai", text: "I noticed elevated stress signals earlier. Try a 4-minute breathing reset — I can also pause notifications for the next hour. Want me to do that?" },
+  const [chat, setChat] = useState<{ role: "user" | "assistant"; text: string }[]>([
+    {
+      role: "assistant",
+      text:
+        "Hi, I'm EmotiScan Companion. I'm here to listen and talk through whatever is on your mind — work, stress, relationships, sleep, motivation, or just how your day has been.\n\nThere's no rush and no judgment here. What would you like to talk about right now?",
+    },
   ]);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+  }, [chat, sending]);
+
+  async function handleSend(e: React.FormEvent) {
+    e.preventDefault();
+    const text = msg.trim();
+    if (!text || sending) return;
+    setError(null);
+    const next = [...chat, { role: "user" as const, text }];
+    setChat(next);
+    setMsg("");
+    setSending(true);
+    try {
+      // Build emotion context from recent detections (last 20)
+      let emotionContext: string | undefined;
+      try {
+        const recent = getDetections().slice(-20);
+        if (recent.length > 0) {
+          const s = summarize(recent);
+          const dom = s.dominant as keyof typeof EMOTION_LABELS;
+          emotionContext = `dominant recent emotion: ${EMOTION_LABELS[dom] ?? dom} (avg confidence ${(s.avgConfidence * 100).toFixed(0)}%)`;
+        }
+      } catch {
+        // ignore
+      }
+
+      const res = await chatWithCompanion({
+        data: {
+          messages: next.map((m) => ({
+            role: m.role,
+            content: m.text,
+          })),
+          emotionContext,
+        },
+      });
+      setChat((c) => [...c, { role: "assistant", text: res.reply }]);
+    } catch (err) {
+      const m = err instanceof Error ? err.message : "Something went wrong.";
+      setError(m);
+    } finally {
+      setSending(false);
+    }
+  }
 
   return (
     <AppShell title="AI Insights">
@@ -119,43 +171,53 @@ function Insights() {
               <Brain className="size-4 text-white" />
             </div>
             <div>
-              <h3 className="font-bold">EmotiSense Companion</h3>
+              <h3 className="font-bold">EmotiScan Companion</h3>
               <p className="text-[10px] font-mono text-foreground/40 uppercase">AI · Emotion-aware</p>
             </div>
           </div>
 
-          <div className="space-y-4 mb-4 max-h-80 overflow-y-auto">
+          <div ref={scrollRef} className="space-y-4 mb-4 max-h-[28rem] overflow-y-auto pr-1">
             {chat.map((m, i) => (
               <div key={i} className={`flex gap-3 ${m.role === "user" ? "flex-row-reverse" : ""}`}>
                 <div className={`size-8 rounded-lg shrink-0 ${m.role === "user" ? "bg-gradient-to-br from-primary to-secondary" : "bg-surface border border-border flex items-center justify-center"}`}>
-                  {m.role === "ai" && <Brain className="size-4 text-primary" />}
+                  {m.role === "assistant" && <Brain className="size-4 text-primary" />}
                 </div>
-                <div className={`max-w-md px-4 py-3 rounded-2xl text-sm ${
+                <div className={`max-w-md px-4 py-3 rounded-2xl text-sm whitespace-pre-wrap leading-relaxed ${
                   m.role === "user" ? "bg-primary text-primary-foreground" : "bg-background border border-border"
                 }`}>
                   {m.text}
                 </div>
               </div>
             ))}
+            {sending && (
+              <div className="flex gap-3">
+                <div className="size-8 rounded-lg shrink-0 bg-surface border border-border flex items-center justify-center">
+                  <Brain className="size-4 text-primary animate-pulse" />
+                </div>
+                <div className="px-4 py-3 rounded-2xl text-sm bg-background border border-border text-foreground/60">
+                  Thinking…
+                </div>
+              </div>
+            )}
+            {error && (
+              <div className="text-xs text-red-500 px-2">{error}</div>
+            )}
           </div>
 
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (!msg.trim()) return;
-              setChat((c) => [...c, { role: "user", text: msg }, { role: "ai", text: "I hear you — let's unpack that. Tell me what's been on your mind most." }]);
-              setMsg("");
-            }}
-            className="flex items-center gap-2 p-2 rounded-xl bg-background border border-border"
-          >
+          <form onSubmit={handleSend} className="flex items-center gap-2 p-2 rounded-xl bg-background border border-border">
             <MessageCircle className="size-4 text-foreground/40 ml-2" />
             <input
               value={msg}
               onChange={(e) => setMsg(e.target.value)}
-              placeholder="Talk to your emotion-aware AI companion…"
+              placeholder={sending ? "Companion is typing…" : "Share what's on your mind…"}
+              disabled={sending}
               className="flex-1 bg-transparent outline-none text-sm placeholder:text-foreground/30"
             />
-            <button type="submit" className="size-9 rounded-lg bg-primary text-primary-foreground flex items-center justify-center hover:opacity-90">
+            <button
+              type="submit"
+              disabled={sending || !msg.trim()}
+              className="size-9 rounded-lg bg-primary text-primary-foreground flex items-center justify-center hover:opacity-90 disabled:opacity-40"
+            >
               <Send className="size-4" />
             </button>
           </form>
